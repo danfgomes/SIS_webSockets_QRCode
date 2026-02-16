@@ -18,13 +18,16 @@ def create_payment_pix():
     data = request.get_json(silent=True)
 
     if not data or "value" not in data:   
-        return jsonify({"message": "Invalid value"})
+        return jsonify({"message": "Invalid value"}),400
     
 
     expiration_date = datetime.now() + timedelta(minutes=30)
 
     
     new_payment = Payment(value=data["value"], expiration_date= expiration_date)
+
+    db.session.add(new_payment)
+    db.session.commit()
 
     pix_obj = Pix()
     data_payment_pix = pix_obj.create_payment()
@@ -50,7 +53,13 @@ def pix_confirmation():
 
 @app.route("/payments/pix/<int:payment_id>", methods = ["GET"])
 def payment_pix_page(payment_id):
-    return render_template("payment.html")
+    payment = Payment.query.get_or_404(payment_id)
+    return render_template("payment.html", 
+                           payment_id=payment_id, 
+                           value=payment.value, 
+                           host="host",
+                           qr_code=payment.qr_code)
+
 
 if __name__ ==  "__main__":
     app.run(debug=True)
