@@ -15,6 +15,9 @@ app.config["SECRET_KEY"] = "SECRET_KEY_WEBSOCKET"
 db.init_app(app)
 socketio = SocketIO(app)
 
+with app.app_context():
+    db.create_all()
+
 @app.route("/payments/pix", methods = ["POST"])
 def create_payment_pix():
     data = request.get_json(silent=True)
@@ -48,13 +51,32 @@ def get_image(file_name):
 
 @app.route("/payments/pix/confirmation", methods = ["POST"])
 def pix_confirmation():
-    return jsonify ({"message": "The payment has been confirmed"})
+     data = request.get_json(silent=True)
+
+     if "bank_payment_id" not in data and "value" not in data:
+         return jsonify({"message": "invalid payment data"}), 400
+     #validations
+     payment = Payment.query.filter_by(bank_payment_id=data.get("bank_payment_id")).first()
+     
+     if not payment:
+         return jsonify({"message": "Payment not found"}), 404
+     
+     if data.get("value")!= payment.value:
+         return jsonify({"message": "Invalid payment value"}), 400
+         
+     payment.paid = True
+     db.session.commit()
+     socketio.emit(f"payment_confirmed-{payment.id}")
+     return jsonify ({"message": "The payment has been confirmed"})
 
 
 @app.route("/payments/pix/<int:payment_id>", methods = ["GET"])
 def payment_pix_page(payment_id):
     payment = Payment.query.get_or_404(payment_id)
-
+    if payment.paid:
+        return render_template("confirmed_payment.html", payment_id=payment_id, value=payment.value)
+    
+    
     return render_template("payment.html", 
                            payment_id=payment_id, 
                            value=payment.value, 
@@ -62,9 +84,9 @@ def payment_pix_page(payment_id):
                            qr_code=payment.qr_code)
 
 #websocket
-@socketio.on("connect")
+@socketio.on('connect')
 def handle_connect():
-    print("Client connected")
+    print("Client connected to the server")
 
 if __name__ == "__main__":
     socketio.run(app, debug=True)
